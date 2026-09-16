@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Padeltoernooi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="ball-dot" aria-hidden="true"></span>
+    <h1>Padeltoernooi</h1>
+  </div>
+</header>
+
+<main>
+  <!-- OPZET -->
+  <section id="setupScreen">
+    <h2 class="section-title">Opzet</h2>
+
+    <div class="card">
+      <label class="field-label" for="playerCount">Aantal spelers</label>
+      <input id="playerCount" type="number" min="4" max="24" step="1" inputmode="numeric" value="8">
+      <div id="nameInputs" class="name-grid"></div>
+    </div>
+
+    <div class="card">
+      <label class="field-label" for="courtCount">Aantal banen</label>
+      <input id="courtCount" type="number" min="1" max="6" step="1" inputmode="numeric" value="2">
+      <p class="help">Elke baan speelt 2 tegen 2. Spelers die geen baan hebben, rusten die ronde.</p>
+    </div>
+
+    <div class="card">
+      <span class="field-label">Hoe willen jullie spelen?</span>
+      <div class="mode-row">
+        <label class="mode-option">
+          <input type="radio" name="mode" value="games" checked>
+          <span>Vast aantal games per wedstrijd</span>
+        </label>
+        <label class="mode-option">
+          <input type="radio" name="mode" value="time">
+          <span>Maximale toernooiduur</span>
+        </label>
+      </div>
+
+      <div class="field-grid">
+        <div>
+          <label class="field-label" for="gamesPerMatch">Games per wedstrijd</label>
+          <input id="gamesPerMatch" type="number" min="4" max="60" step="1" inputmode="numeric" value="16">
+          <div class="quick-row">
+            <button type="button" class="quick" data-games="12">12</button>
+            <button type="button" class="quick" data-games="16">16</button>
+            <button type="button" class="quick" data-games="20">20</button>
+            <button type="button" class="quick" data-games="24">24</button>
+          </div>
+        </div>
+        <div>
+          <label class="field-label" for="minPerGame">Minuten per game (schatting)</label>
+          <input id="minPerGame" type="number" min="0.5" max="5" step="0.5" inputmode="decimal" value="1.5">
+        </div>
+        <div>
+          <label class="field-label" for="changeover">Wisseltijd tussen rondes (min)</label>
+          <input id="changeover" type="number" min="0" max="30" step="1" inputmode="numeric" value="3">
+        </div>
+      </div>
+
+      <div id="gamesFields">
+        <label class="field-label" for="rounds">Aantal ronden</label>
+        <div class="rounds-row">
+          <input id="rounds" type="number" min="1" max="40" step="1" inputmode="numeric" value="7">
+          <button type="button" id="suggestRounds" class="secondary-btn">Stel voor</button>
+        </div>
+      </div>
+
+      <div id="timeFields" class="hidden">
+        <label class="field-label" for="budget">Totale tijd (minuten)</label>
+        <input id="budget" type="number" min="20" max="600" step="5" inputmode="numeric" value="120">
+        <div class="quick-row">
+          <button type="button" class="quick" data-budget="60">1 uur</button>
+          <button type="button" class="quick" data-budget="90">1,5 uur</button>
+          <button type="button" class="quick" data-budget="120">2 uur</button>
+          <button type="button" class="quick" data-budget="180">3 uur</button>
+        </div>
+        <label class="field-label" for="roundsTime">Ronden die passen</label>
+        <input id="roundsTime" type="number" min="1" max="40" step="1" inputmode="numeric" readonly>
+      </div>
+
+      <p id="summary" class="summary"></p>
+    </div>
+
+    <p id="formError" class="error"></p>
+    <button id="startBtn" class="primary-btn">Schema maken</button>
+  </section>
+
+  <!-- RONDES -->
+  <section id="roundsScreen" class="hidden">
+    <div class="round-header">
+      <h2 id="roundTitle" class="section-title">Ronde 1</h2>
+      <p id="roundProgress" class="help"></p>
+    </div>
+    <div id="roundChips" class="chip-row"></div>
+    <p id="sitout" class="sitout"></p>
+    <div id="matches"></div>
+    <button id="toStand" class="primary-btn">Bekijk de stand</button>
+  </section>
+
+  <!-- STAND -->
+  <section id="standScreen" class="hidden">
+    <h2 class="section-title">Stand</h2>
+    <div class="card table-card">
+      <table id="standTable">
+        <thead>
+          <tr><th>#</th><th>Speler</th><th>Wed</th><th>Games</th><th>Gem</th><th>+/−</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="standNote" class="help"></p>
+    <button id="shareBtn" class="primary-btn">Deel de stand</button>
+    <p id="shareMsg" class="help center"></p>
+    <button id="backToRounds" class="secondary-btn wide">Terug naar rondes</button>
+    <button id="resetBtn" class="danger-btn">Alles wissen en opnieuw beginnen</button>
+  </section>
+</main>
+
+<nav class="tabbar">
+  <button id="tabSetup" class="tab" data-nav="setup">Opzet</button>
+  <button id="tabRounds" class="tab" data-nav="rounds">Rondes</button>
+  <button id="tabStand" class="tab" data-nav="stand">Stand</button>
+</nav>
+
+<script src="app.js"></script>
+</body>
+</html>
