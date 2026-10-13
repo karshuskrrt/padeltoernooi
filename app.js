@@ -29,6 +29,12 @@
     return R0 < 5 ? R0 * 2 : R0;
   }
 
+  // Tijdmodus: hoelang mag elke ronde duren als het totaal en het aantal ronden vastliggen.
+  function roundMinutes(budget, rounds, changeover) {
+    if (rounds <= 0) return 0;
+    return (budget - (rounds - 1) * changeover) / rounds;
+  }
+
   function shuffle(arr, rand) {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(rand() * (i + 1));
@@ -111,30 +117,18 @@
     return best;
   }
 
-  // Tijdmodus: hoeveel ronden passen in het budget, zo mogelijk een eerlijk (gelijk-speel) aantal.
-  function timePlan(budget, gamesPerMatch, minPerGame, changeover, N, C) {
-    const A = 4 * C;
-    const R0 = equalPlayBase(N, C);
-    const matchMin = gamesPerMatch * minPerGame;
-    const raw = Math.max(0, Math.floor((budget + changeover) / (matchMin + changeover)));
-    let rounds = Math.floor(raw / R0) * R0;
-    let equal = true;
-    if (rounds === 0) { rounds = raw; equal = raw % R0 === 0; }
-    const total = rounds > 0 ? rounds * matchMin + (rounds - 1) * changeover : 0;
-    return { raw, rounds, equal, total, matchMin, fairBase: R0 };
-  }
-
   function totalMinutes(rounds, gamesPerMatch, minPerGame, changeover) {
     if (rounds <= 0) return 0;
     return rounds * gamesPerMatch * minPerGame + (rounds - 1) * changeover;
   }
 
-  const Padel = { gcd, equalPlayBase, suggestRounds, generateSchedule, timePlan, totalMinutes };
+  const Padel = { gcd, equalPlayBase, suggestRounds, roundMinutes, generateSchedule, totalMinutes };
   if (typeof module !== 'undefined' && module.exports) { module.exports = Padel; return; }
   global.Padel = Padel;
 
   /* ---------------- DOM-app ---------------- */
-  const LS_KEY = 'padeltoernooi-v2';
+  const LS_KEY = 'padeltoernooi-v3';
+  const MIN_ROUND_MINUTES = 5;
   const $ = (s) => document.querySelector(s);
 
   let state = null; // {config, schedule, scores, screen, currentRound}
@@ -142,7 +136,7 @@
 
   function defaultState() {
     return {
-      config: { count: 8, names: [], courts: 2, mode: 'games', gamesPerMatch: 16, minPerGame: 1.5, changeover: 3, budget: 120, rounds: 7 },
+      config: { count: 8, names: [], courts: 2, mode: 'games', gamesPerMatch: 16, minPerGame: 1.5, changeover: 3, budget: 120, rounds: 7, roundsTime: 6 },
       schedule: null, scores: {}, screen: 'setup', currentRound: 0
     };
   }
@@ -159,13 +153,17 @@
     return n;
   }
   function activePerRound() { return 4 * cfg().courts; }
-  function sitoutsPerRound() { return cfg().count - activePerRound(); }
-  function fairBase() { return Padel.equalPlayBase(cfg().count, cfg().courts); }
 
   function fmtMin(min) {
     const m = Math.round(min);
     const h = Math.floor(m / 60), r = m % 60;
     return h > 0 ? (r > 0 ? h + ' u ' + r + ' min' : h + ' uur') : r + ' min';
+  }
+
+  function fmtRoundMin(min) {
+    const rounded = Math.round(min * 2) / 2;
+    const txt = String(rounded).replace('.', ',');
+    return txt + ' min';
   }
 
   /* ----- setup-scherm ----- */
@@ -199,8 +197,9 @@
   function syncModeFields() {
     const mode = document.querySelector('input[name="mode"]:checked').value;
     $('#gamesFields').classList.toggle('hidden', mode !== 'games');
+    $('#gamesOnlyFields').classList.toggle('hidden', mode !== 'games');
     $('#timeFields').classList.toggle('hidden', mode !== 'time');
-    if (mode === 'time') syncTimeRounds();
+    if (mode === 'time') syncTimeSummary();
     else syncGamesSummary();
   }
 
@@ -215,14 +214,14 @@
     };
   }
 
-  function scheduleNotes(c, rounds, equal) {
+  function scheduleNotes(c, rounds) {
     const notes = [];
     const A = 4 * c.courts;
     const so = c.count - A;
     if (so > 0) {
       notes.push('Per ronde rusten ' + so + (so === 1 ? ' speler' : ' spelers') + ' (roulerend).');
       const plays = Math.floor(A * rounds / c.count);
-      notes.push('Iedereen speelt ' + (equal ? 'even vaak (' + plays + ' van ' + rounds + ' ronden)' : 'ongeveer even vaak') + '.');
+      notes.push('Iedereen speelt ongeveer even vaak (' + plays + ' van ' + rounds + ' ronden).');
     } else {
       notes.push('Iedereen speelt elke ronde.');
     }
@@ -230,31 +229,32 @@
     return notes.join(' ');
   }
 
+  function fairWarn(c, rounds) {
+    if (rounds > 0 && rounds % Padel.equalPlayBase(c.count, c.courts) !== 0) {
+      return ' Let op: met ' + rounds + ' ronden speelt niet iedereen even vaak.';
+    }
+    return '';
+  }
+
   function syncGamesSummary() {
     const c = readCommon();
     const rounds = parseInt($('#rounds').value, 10) || 0;
     const total = Padel.totalMinutes(rounds, c.gamesPerMatch, c.minPerGame, c.changeover);
-    let warn = '';
-    if (rounds > 0 && rounds % Padel.equalPlayBase(c.count, c.courts) !== 0) {
-      warn = ' Let op: met ' + rounds + ' ronden speelt niet iedereen even vaak.';
-    }
     $('#summary').textContent = rounds > 0
-      ? rounds + ' ronden · ' + c.courts + (c.courts === 1 ? ' baan' : ' banen') + ' · ' + c.gamesPerMatch + ' games per wedstrijd · ± ' + fmtMin(total) + ' totaal. ' + scheduleNotes(c, rounds, true) + warn
+      ? rounds + ' ronden · ' + c.courts + (c.courts === 1 ? ' baan' : ' banen') + ' · ' + c.gamesPerMatch + ' games per wedstrijd · ± ' + fmtMin(total) + ' totaal. ' + scheduleNotes(c, rounds) + fairWarn(c, rounds)
       : 'Kies een aantal ronden.';
   }
 
-  function syncTimeRounds() {
+  function syncTimeSummary() {
     const c = readCommon();
-    const plan = Padel.timePlan(c.budget, c.gamesPerMatch, c.minPerGame, c.changeover, c.count, c.courts);
-    const el = $('#roundsTime');
-    el.value = plan.rounds;
+    const rounds = parseInt($('#roundsTime').value, 10) || 0;
+    if (rounds < 1) { $('#summary').textContent = 'Kies een aantal ronden.'; return; }
+    const per = Padel.roundMinutes(c.budget, rounds, c.changeover);
     let txt;
-    if (plan.rounds === 0) {
-      txt = 'Met deze instellingen past geen enkele ronde in ' + fmtMin(c.budget) + '. Verlaag het aantal games per wedstrijd of verleng de tijd.';
+    if (per < MIN_ROUND_MINUTES) {
+      txt = 'Dat past niet: ' + rounds + ' ronden in ' + fmtMin(c.budget) + ' met ' + c.changeover + ' min wisseltijd is maar ' + fmtRoundMin(Math.max(per, 0)) + ' per ronde. Kies minder ronden, meer tijd of minder wisseltijd.';
     } else {
-      txt = plan.rounds + ' ronden passen (± ' + fmtMin(plan.total) + ' van ' + fmtMin(c.budget) + '). ' + scheduleNotes(c, plan.rounds, plan.equal);
-      if (!plan.equal) txt += ' Let op: geen eerlijk rondeschema mogelijk binnen deze tijd; niet iedereen speelt even vaak.';
-      if (plan.raw > plan.rounds) txt += ' Nog ' + (plan.raw - plan.rounds) + ' extra ' + (plan.raw - plan.rounds === 1 ? 'ronde zou' : 'ronden zouden') + ' passen, maar dan speelt niet iedereen even vaak.';
+      txt = rounds + ' ronden · max ' + fmtRoundMin(per) + ' per ronde · ' + c.courts + (c.courts === 1 ? ' baan' : ' banen') + ' · totaal ± ' + fmtMin(c.budget) + '. ' + scheduleNotes(c, rounds) + fairWarn(c, rounds);
     }
     $('#summary').textContent = txt;
   }
@@ -267,7 +267,7 @@
       : (parseInt($('#rounds').value, 10) || 0);
     const nm = [];
     for (let i = 0; i < c.count; i++) nm.push((draftNames[i] || '').trim());
-    return { count: c.count, names: nm, courts: c.courts, mode, gamesPerMatch: c.gamesPerMatch, minPerGame: c.minPerGame, changeover: c.changeover, budget: c.budget, rounds };
+    return { count: c.count, names: nm, courts: c.courts, mode, gamesPerMatch: c.gamesPerMatch, minPerGame: c.minPerGame, changeover: c.changeover, budget: c.budget, rounds, roundsTime: parseInt($('#roundsTime').value, 10) || 6 };
   }
 
   /* ----- rondes-scherm ----- */
@@ -297,6 +297,12 @@
     const r = state.currentRound;
     const round = state.schedule[r];
     $('#roundTitle').textContent = 'Ronde ' + (r + 1) + ' van ' + cfg().rounds;
+    if (cfg().mode === 'time') {
+      const per = Padel.roundMinutes(cfg().budget, cfg().rounds, cfg().changeover);
+      $('#roundTime').textContent = 'Max ' + fmtRoundMin(per) + ' deze ronde';
+    } else {
+      $('#roundTime').textContent = '';
+    }
     const doneCount = state.schedule.reduce((acc, rd, ri) => acc + rd.matches.filter((_, m) => scoreOf(ri, m)).length, 0);
     $('#roundProgress').textContent = doneCount + ' van ' + (cfg().rounds * cfg().courts) + ' wedstrijden ingevuld';
     const so = round.sitout || [];
@@ -321,20 +327,32 @@
       teamB.textContent = match.teamB.map(i => nm[i]).join(' & ');
       const inA = document.createElement('input');
       const inB = document.createElement('input');
-      [inA, inB].forEach(inp => { inp.type = 'number'; inp.min = 0; inp.max = cfg().gamesPerMatch; inp.inputMode = 'numeric'; });
+      [inA, inB].forEach(inp => {
+        inp.type = 'number'; inp.min = 0; inp.inputMode = 'numeric';
+        if (cfg().mode === 'games') inp.max = cfg().gamesPerMatch;
+      });
       inA.value = sc ? sc[0] : ''; inB.value = sc ? sc[1] : '';
       inA.setAttribute('aria-label', 'Score ' + teamA.textContent);
       inB.setAttribute('aria-label', 'Score ' + teamB.textContent);
       const vs = document.createElement('div'); vs.className = 'vs'; vs.textContent = '–';
       function commit(fromA) {
-        const G = cfg().gamesPerMatch;
-        let a = inA.value === '' ? null : Math.max(0, Math.min(G, parseInt(inA.value, 10) || 0));
-        let b = inB.value === '' ? null : Math.max(0, Math.min(G, parseInt(inB.value, 10) || 0));
-        if (fromA && a !== null) { b = G - a; inB.value = b; }
-        if (!fromA && b !== null) { a = G - b; inA.value = a; }
-        if (a === null || b === null) { delete state.scores[r]?.[m]; card.classList.remove('complete'); save(); renderRoundChips(); updateProgress(); return; }
-        if (!state.scores[r]) state.scores[r] = {};
-        state.scores[r][m] = [a, b];
+        if (cfg().mode === 'games') {
+          const G = cfg().gamesPerMatch;
+          let a = inA.value === '' ? null : Math.max(0, Math.min(G, parseInt(inA.value, 10) || 0));
+          let b = inB.value === '' ? null : Math.max(0, Math.min(G, parseInt(inB.value, 10) || 0));
+          if (fromA && a !== null) { b = G - a; inB.value = b; }
+          if (!fromA && b !== null) { a = G - b; inA.value = a; }
+          if (a === null || b === null) { delete state.scores[r]?.[m]; card.classList.remove('complete'); save(); renderRoundChips(); updateProgress(); return; }
+          if (!state.scores[r]) state.scores[r] = {};
+          state.scores[r][m] = [a, b];
+        } else {
+          if (inA.value === '' || inB.value === '') { delete state.scores[r]?.[m]; card.classList.remove('complete'); save(); renderRoundChips(); updateProgress(); return; }
+          const a = Math.max(0, parseInt(inA.value, 10) || 0);
+          const b = Math.max(0, parseInt(inB.value, 10) || 0);
+          inA.value = a; inB.value = b;
+          if (!state.scores[r]) state.scores[r] = {};
+          state.scores[r][m] = [a, b];
+        }
         card.classList.add('complete');
         save(); renderRoundChips(); updateProgress();
       }
@@ -349,7 +367,7 @@
       card.appendChild(row);
       const hint = document.createElement('div');
       hint.className = 'match-hint';
-      hint.textContent = 'Totaal ' + cfg().gamesPerMatch + ' games';
+      hint.textContent = cfg().mode === 'time' ? 'Gewonnen games per team invullen' : 'Totaal ' + cfg().gamesPerMatch + ' games';
       card.appendChild(hint);
       wrap.appendChild(card);
     });
@@ -423,7 +441,7 @@
 
     // setup velden vullen uit state
     $('#playerCount').value = cfg().count;
-    draftNames = cfg().names.slice();
+    draftNames = (cfg().names || []).slice();
     renderNameInputs();
     syncCourtsDefault(false);
     $('#courtCount').value = cfg().courts;
@@ -431,8 +449,9 @@
     $('#minPerGame').value = cfg().minPerGame;
     $('#changeover').value = cfg().changeover;
     $('#budget').value = cfg().budget;
-    document.querySelector('input[name="mode"][value="' + cfg().mode + '"]').checked = true;
+    document.querySelector('input[name="mode"][value="' + (cfg().mode === 'time' ? 'time' : 'games') + '"]').checked = true;
     $('#rounds').value = cfg().rounds;
+    $('#roundsTime').value = cfg().roundsTime || 6;
     syncModeFields();
 
     $('#playerCount').addEventListener('change', () => { renderNameInputs(); syncCourtsDefault(true); syncModeFields(); });
@@ -454,6 +473,10 @@
       if (config.count < 4) { $('#formError').textContent = 'Vul minimaal 4 spelers in.'; return; }
       if (config.rounds < 1) { $('#formError').textContent = 'Het schema heeft minimaal 1 ronde nodig.'; return; }
       if (config.courts * 4 > config.count) { $('#formError').textContent = 'Te veel banen voor dit aantal spelers.'; return; }
+      if (config.mode === 'time' && Padel.roundMinutes(config.budget, config.rounds, config.changeover) < MIN_ROUND_MINUTES) {
+        $('#formError').textContent = 'Dit past niet: minder dan ' + MIN_ROUND_MINUTES + ' minuten per ronde. Kies minder ronden, meer tijd of minder wisseltijd.';
+        return;
+      }
       $('#formError').textContent = '';
       state.config = config;
       state.schedule = Padel.generateSchedule(config.count, config.courts, config.rounds, Date.now() % 2147483647).rounds;
